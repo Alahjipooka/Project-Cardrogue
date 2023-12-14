@@ -9,6 +9,8 @@ public class Player : MonoBehaviour{
     [SerializeField] public float runSpeed = 20.0f;
     [SerializeField] public float moveLimiter = 0.7f;
     [SerializeField] public float cameraOffsetChangeSpeed = 1f;
+    [ChildGameObjectsOnly][SerializeField] public GameObject useParameter;
+    [SerializeField] float useParameterBaseScale=10f;
 
     float horizontal;
     float vertical;
@@ -35,6 +37,14 @@ public class Player : MonoBehaviour{
         if(last_horizontal!=0||last_vertical!=0){
             float _step=Time.deltaTime*cameraOffsetChangeSpeed;
             cm_cameraoffset.m_Offset=Vector3.MoveTowards(cm_cameraoffset.m_Offset,new Vector3(last_horizontal,last_vertical,0),_step);
+        }
+
+        if(CardManager.instance.selectedCard!=-1&&CardManager.instance.selectedCardRef!=null){
+            float _step=Time.fixedDeltaTime*5f;
+            useParameter.transform.localScale=Vector2.MoveTowards(useParameter.transform.localScale,new Vector2(useParameterBaseScale*CardManager.instance.selectedCardRef.useRange,useParameterBaseScale*CardManager.instance.selectedCardRef.useRange),_step);
+            useParameter.transform.Rotate(new Vector3(0,0,2));
+        }else{
+            useParameter.transform.localScale=Vector2.zero;
         }
     }
     void FixedUpdate() {
