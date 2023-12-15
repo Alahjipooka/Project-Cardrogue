@@ -8,7 +8,16 @@ using Unity.VisualScripting;
 using UnityEngine.EventSystems;
 using UnityEngine.Rendering;
 
-public class CardEntity : MonoBehaviour{//, IPointerEnterHandler, IPointerExitHandler{
+public class CardEntity : MonoBehaviour{
+    [Header("Config")]
+    [ChildGameObjectsOnly][SerializeField]TextMeshProUGUI displayNameTxt;
+    [ChildGameObjectsOnly][SerializeField]TextMeshProUGUI descNameTxt;
+    [ChildGameObjectsOnly][SerializeField]TextMeshProUGUI costTxt;
+    [ChildGameObjectsOnly][SerializeField]Image lockSpr;
+    [SerializeField]Sprite lockedSprite;
+    [SerializeField]Sprite unlockedSprite;
+    [SerializeField]Sprite beenlockedSprite;
+    [Header("Variables")]
     [ReadOnly]public int handId;
     [ReadOnly]public string cardIdName;
     Vector2 originalScale;
@@ -51,66 +60,68 @@ public class CardEntity : MonoBehaviour{//, IPointerEnterHandler, IPointerExitHa
         canvas.sortingOrder=targetZ;
 
         transform.GetChild(0).GetComponent<Image>().color=CardManager.instance.cardTypesColors[(int)card.cardType].color;
-        transform.GetChild(0).GetChild(0).GetComponent<TextMeshProUGUI>().text=card.displayName;
-        transform.GetChild(0).GetChild(1).GetComponent<TextMeshProUGUI>().text=card.description;
-        transform.GetChild(0).GetChild(2).GetChild(0).GetComponent<TextMeshProUGUI>().text=card.cost.ToString();
+        displayNameTxt.text=card.displayName;
+        descNameTxt.text=card.description;
+        costTxt.text=card.cost.ToString();
 
         _isSetup=true;
     }
     void Update(){
-        float _step = Time.fixedDeltaTime*50;
-        float rotationSpeed = Time.fixedDeltaTime*50;
-        // rt.localScale=Vector2.MoveTowards(rt.localScale,targetScale,_step);
+        // float _step = Time.fixedDeltaTime*50f;
+        float _step = Time.fixedDeltaTime*250f;
+        float rotationSpeed = Time.fixedDeltaTime*50f;
         rt.localScale = Vector2.MoveTowards(rt.localScale,targetScale,_step);
-        // rt.anchoredPosition=Vector2.MoveTowards(rt.anchoredPosition,targetPos,_step);
-        // rt.localEulerAngles=Vector3.MoveTowards(new Vector3(rt.localEulerAngles.x,rt.localEulerAngles.y,rt.localEulerAngles.z),new Vector3(rt.localEulerAngles.x,rt.localEulerAngles.y,targetRot),_step);
+        rt.anchoredPosition=Vector2.MoveTowards(rt.anchoredPosition,targetPos,_step);
         Quaternion _targetRotation = Quaternion.Euler(0f, 0f, targetRot);
         rt.localRotation = Quaternion.RotateTowards(rt.localRotation, _targetRotation, rotationSpeed);
 
-        // while(transform.GetSiblingIndex()<transform.parent.childCount-1){transform.SetSiblingIndex((int)Vector2.MoveTowards(new Vector2(transform.GetSiblingIndex(),0),new Vector2(targetZ,0),_step).x);}
-        // transform.SetSiblingIndex((int)Vector2.MoveTowards(new Vector2(transform.GetSiblingIndex(),0),new Vector2(targetZ,0),_step).x);
         canvas.sortingOrder=(int)Vector2.MoveTowards(new Vector2(canvas.sortingOrder,0),new Vector2(targetZ,0),_step).x;
 
         if(_isSetup&&CardManager.instance.selectedCard==handId){
-            targetScale=originalScale*1.25f;
-            targetPos=new Vector2(originalPos.x,originalPos.y*1.8f);
+            targetScale=originalScale*CardManager.instance.cardSelectScaleMult;
+            targetPos=new Vector2(originalPos.x,originalPos.y+CardManager.instance.cardSelectOffset);
             targetZ=CardManager.instance.handSize+10;
             targetRot=0;
-        }
-    }
-
-    public void SelectCard(){
-        if(CardManager.instance.FindCard(cardIdName).cardType!=cardType.passive){
-            CardManager.instance.SelectCard(handId);
-        }
-        if(CardManager.instance.FindCard(cardIdName).cardType==cardType.instaUse){
-            CardManager.instance.UseCard(handId);
-        }
-        if(CardManager.instance.selectedCard!=handId){
+        }else{
+            if(CardManager.instance.hoveredCard!=handId){
                 targetScale=originalScale;
                 targetPos=originalPos;
                 targetZ=handId;
                 targetRot=originalRot;
             }
+        }
+        
+        if(handId<CardManager.instance.hand.Count){
+            if(CardManager.instance.hand[handId]!=null){
+                if(CardManager.instance.hand[handId].locked&&lockSpr.sprite!=lockedSprite){
+                    lockSpr.sprite=lockedSprite;
+                }
+                if(!CardManager.instance.hand[handId].locked){
+                    if(!CardManager.instance.hand[handId].beenLocked&&lockSpr.sprite!=unlockedSprite){lockSpr.sprite=unlockedSprite;}
+                    else if(CardManager.instance.hand[handId].beenLocked&&lockSpr.sprite!=beenlockedSprite){lockSpr.sprite=beenlockedSprite;}
+                }
+            }
+        }
     }
-    // public void OnPointerEnter(PointerEventData eventData){
-    //     if(_isSetup){
-    //         targetScale=originalScale*1.2f;
-    //         targetPos=new Vector2(originalPos.x,originalPos.y*1.2f);
-    //         targetZ=transform.parent.childCount-1;
-    //     }
-    // }
-    // public void OnPointerExit(PointerEventData eventData){
-    //     if(_isSetup){
-    //         targetScale=originalScale;
-    //         targetPos=originalPos;
-    //         targetZ=handId;
-    //     }
-    // }
+
+    public void SelectCard(){
+        CardManager.instance.SelectCard(handId,true);
+        
+        if(CardManager.instance.selectedCard!=handId){
+            targetScale=originalScale;
+            targetPos=originalPos;
+            targetZ=handId;
+            targetRot=originalRot;
+        }
+    }
+    public void LockCard(){CardManager.instance.ToggleLockCard(handId);}
     public void HoverEnter(){
         if(_isSetup){
             targetScale=originalScale*1.2f;
-            targetPos=new Vector2(originalPos.x,originalPos.y*1.2f);
+            // targetPos=new Vector2(originalPos.x,originalPos.y+50f);
+            // targetPos=new Vector2(originalPos.x,originalPos.y+250f);
+            // targetPos=new Vector2(originalPos.x,originalPos.y+150f);
+            targetPos=new Vector2(originalPos.x,originalPos.y+CardManager.instance.cardHoverOffset);
             targetZ=CardManager.instance.handSize+5;
             targetRot=0;
         }

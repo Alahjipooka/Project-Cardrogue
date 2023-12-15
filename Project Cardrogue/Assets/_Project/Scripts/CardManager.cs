@@ -4,54 +4,103 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using Sirenix.OdinInspector;
+using Unity.VisualScripting;
 
-public class CardManager : MonoBehaviour{
-    public static CardManager instance;
+public class CardManager : MonoBehaviour{   public static CardManager instance;
+    [Header("Config")]
     [AssetsOnly][SerializeField] GameObject cardUiPrefab;
-    [SerializeField] public bool angledCardsLayout=false;
+    [SerializeField] public bool angledHandLayout=false;
     [SerializeField] RectTransform handLayoutGroup;
-    [SerializeField] int _newRandomCardsAmnt=10;
     public int handSize=5;
     public int energy=10;
     public int energyMax=20;
+    public int locks=2;
+    public int locksMax=10;
+    public int lockedCardsCap=2;
     public float energyRegenTime=5f;
     public int energyRegenRate=1;
-    public int selectedCard=-1;
-    public Card selectedCardRef=null;
+    public bool lockingBlocksUse=false;
     public bool autoRefillOnEmptyHand=true;
+    public bool instaRefillWhenLeftWithUnusable=false;//If left with 1 passive
     [DisableIf("@this.instaRerollOnUse")]public bool autoRefillOnUse=false;
     [DisableIf("@this.autoRefillOnUse")]public bool instaRerollOnUse=false;
+    public bool infiniteScroll=false;
+    [SerializeField]public CardTypeColor[] cardTypesColors;
+    [SerializeField] bool makeUpRandomCards=true;
+    [HideIf("@!this.makeUpRandomCards")][SerializeField] bool _overridePresetCards=true;
+    [HideIf("@!this.makeUpRandomCards")][SerializeField] int _newRandomCardsAmnt=10;
+    [SerializeField] public float cardHoverOffset=150f;
+    [SerializeField] public float cardHoverScaleMult=1f;
+    [SerializeField] public float cardSelectOffset=160f;
+    [SerializeField] public float cardSelectScaleMult=1.25f;
 
-    public CardTypeColor[] cardTypesColors;
+    [Header("Variables")]
     public List<Card> cardsList;
-    public List<Card> hand;
+    public List<CardHandInfo> hand;
+    [DisableInEditorMode]public int hoveredCard=-1; 
+    [DisableInEditorMode]public int selectedCard=-1;
+    [DisableInEditorMode]public int lastSelectedCard=-1;
+    [DisableInEditorMode]public Card selectedCardRef=null;
+    [DisableInEditorMode]public float energyRegenTimer;
     void Awake(){
-        if(instance!=null){Destroy(gameObject);}else{instance=this;/*DontDestroyOnLoad(gameObject);*/gameObject.name=gameObject.name.Split('(')[0];}
+        if(instance!=null){Destroy(gameObject);}else{instance=this;gameObject.name=gameObject.name.Split('(')[0];}
     }
     void Start(){
-        RandomizeCardList();
+        if(makeUpRandomCards)RandomizeCardList();
         RerollHand();
-        energy=100;energyMax=100;
-        StartCoroutine(RegenerateEnergyI());
+        energyMax=100;energy=energyMax;
+        locksMax=100;locks=locksMax;
+        energyRegenTimer=energyRegenTime;
     }
 
     void Update(){
         if(Input.GetKeyDown(KeyCode.R)){RerollHand();}
         if(Input.GetKeyDown(KeyCode.F)){FillHand();}
-        if(Input.GetKeyDown(KeyCode.Space)){UseSelectedCard();}
-        if(Input.GetKeyDown(KeyCode.U)){UpdateUiWithHand();}
+        if(Input.GetKeyDown(KeyCode.U)){UseSelectedCard();}
+        if(Input.GetKeyDown(KeyCode.I)){UpdateUiWithHand();}
         if(Input.GetKeyDown(KeyCode.C)){RandomizeCardList();}
+        if(Input.GetKeyDown(KeyCode.L)){ToggleLockHoveredOrSelectedCard();}
         if(Input.GetKeyDown(KeyCode.E)){energy+=10;}
+        if(Input.GetKeyDown(KeyCode.K)){locks+=2;}
+        
+        if(Input.GetKeyDown(KeyCode.Alpha1)){SelectCard(0);}
+        if(Input.GetKeyDown(KeyCode.Alpha2)){SelectCard(1);}
+        if(Input.GetKeyDown(KeyCode.Alpha3)){SelectCard(2);}
+        if(Input.GetKeyDown(KeyCode.Alpha4)){SelectCard(3);}
+        if(Input.GetKeyDown(KeyCode.Alpha5)){SelectCard(4);}
+        if(Input.mouseScrollDelta.y>0){SelectUp();}
+        else if(Input.mouseScrollDelta.y<0){SelectDown();}
 
         if(selectedCardRef==null&&selectedCard!=-1){
-            selectedCardRef=FindCardInHand(hand[selectedCard].idName);
+        // if(selectedCardRef==null&&(selectedCard!=-1||lastSelectedCard!=selectedCard)){
+            selectedCardRef=FindCard(hand[selectedCard].idName);
+        }else if(selectedCard==-1){selectedCardRef=null;}
+        energyMax=Mathf.Clamp(energyMax,0,9999);
+        energy=Mathf.Clamp(energy,0,energyMax);
+        locks=Mathf.Clamp(locks,0,locksMax);
+
+        // foreach(CardHandInfo c in hand){if(c.locked){c.beenLocked=true;}}//This probably should be turned off if I want to implement pre-locked cards
+
+        if(energyRegenTimer>0){energyRegenTimer-=Time.deltaTime;}
+        else{
+            energy+=energyRegenRate;
+            energyRegenTimer=energyRegenTime;
+        }
+
+        if(instaRefillWhenLeftWithUnusable){
+            if(hand.Count==1){
+                if(FindCard(hand[0].idName).cardType==cardType.passive){
+                    FillHand();
+                }
+            }
         }
     }
 
     [Button("RandomizeCardList")]
     public void RandomizeCardList(){
-        cardsList=new List<Card>(0);
-        for(int i=0;i<_newRandomCardsAmnt;i++){
+        if(_overridePresetCards)cardsList=new List<Card>(0);
+        int cardsLitCountBefore=cardsList.Count;
+        for(int i=cardsLitCountBefore;i<cardsLitCountBefore+_newRandomCardsAmnt;i++){
             cardsList.Add(new Card {
                 idName = "card" + (i+1),
                 displayName = "card " + (i+1),
@@ -64,6 +113,7 @@ public class CardManager : MonoBehaviour{
         }
         foreach(Card c in cardsList){
             if(c.cardType==cardType.passive){c.cost=1;c.useRange=0;c.useTime=Random.Range(0, 30+1);}//it could be interesting if a passive card would take energy per use time
+            if(c.cardType==cardType.instaUse){c.useRange=0;}//c.useTime=0;}
         }
     }
 
@@ -71,41 +121,49 @@ public class CardManager : MonoBehaviour{
     public void FillHand(){
         for(int i=hand.Count;i<handSize;i++){
             int _randCardId=Random.Range(0, cardsList.Count);
-            hand.Add(CloneCard(cardsList[_randCardId]));
+            AddCleanHandInfo(cardsList[_randCardId].idName);
         }
         UpdateUiWithHand();
     }
     [Button("RerollHand")]
     public void RerollHand(){
-        // hand=null;
-        hand=new List<Card>(0);
-        // hand=new List<Card>(handSize);
-        for(int i=0;i<handSize;i++){
-            int _randCardId=Random.Range(0, cardsList.Count);
-            hand.Add(CloneCard(cardsList[_randCardId]));
+        List<CardHandInfo> lockedCards=new List<CardHandInfo>();
+        if(hand!=null){if(hand.Count>0){
+            for(int i=0;i<hand.Count;i++){
+                if(FindCard(hand[i].idName)!=null){
+                    if(hand[i].locked){lockedCards.Add(CloneHandInfo(hand[i]));}
+                }
+            }
+        }}
+        hand=new List<CardHandInfo>(0);
+        for(int i=0;i<lockedCards.Count;i++){//Readd locked cards
+            hand.Add(CloneHandInfo(lockedCards[i]));
         }
+        for(int i=hand.Count-1;i<handSize-1;i++){
+            int _randCardId=Random.Range(0, cardsList.Count);
+            AddCleanHandInfo(cardsList[_randCardId].idName);
+        }
+        selectedCard=-1;selectedCardRef=null;
         UpdateUiWithHand();
     }
-    // GameObject cardUiTemplate=null;
     float minMaxCardRotationAngleNormal = 5f;
     float minMaxCardRotationAngle = 40f;
     float verticalOffsetFactor = 10f;
     float verticalOffsetFactorAngled = 40f;
+    [Button("UpdateUiWithHand")]
     public void UpdateUiWithHand(){
-        // if(cardUiTemplate==null){cardUiTemplate=Instantiate(handLayoutGroup.GetChild(0).gameObject);}
-        // for(int i=handLayoutGroup.childCount-1;i>0;i--){
         for(int i=handLayoutGroup.childCount-1;i>=0;i--){
             Destroy(handLayoutGroup.GetChild(i).gameObject);
         }
 
         for(int i=0;i<hand.Count;i++){
-            Card card = hand[i];
+            CardHandInfo card = hand[i];
             GameObject _cardUi=Instantiate(cardUiPrefab,handLayoutGroup);
             _cardUi.name="Card "+(i+1);
             CardEntity _cardEntity=_cardUi.GetComponent<CardEntity>();
 
             float verticalOffset=0;
-            if(angledCardsLayout){
+            if(angledHandLayout){
                 float normalizedPos = (float)i / (Mathf.Clamp(hand.Count,2,99) - 1);
                 verticalOffset = verticalOffsetFactorAngled * Mathf.Abs(normalizedPos - 0.5f);
                 if(hand.Count<2){verticalOffset=0;}
@@ -116,7 +174,7 @@ public class CardManager : MonoBehaviour{
             _cardEntity.transform.GetChild(0).GetComponent<RectTransform>().localPosition=new Vector3(0,-verticalOffset,0);
 
             float _angle=0;
-            if(angledCardsLayout){
+            if(angledHandLayout){
                 _angle=Mathf.Lerp(minMaxCardRotationAngle, -minMaxCardRotationAngle, (float)i / (Mathf.Clamp(hand.Count,2,99) - 1));
                 if(hand.Count<2){_angle=0;}
             }else{
@@ -126,74 +184,166 @@ public class CardManager : MonoBehaviour{
             _cardEntity.SetProperties(i,card.idName,_angle);
             // _cardEntity.originalRot=_angle;
         }
-        // Destroy(cardUiTemplate);
     }
-    public void SelectCard(int cardId){
-        if(selectedCard==cardId){selectedCard=-1;return;}
-        if(selectedCard!=cardId&&selectedCard!=-1){selectedCard=-1;return;}//For unselecting by pressing a different card
-        selectedCard=cardId;
-        selectedCardRef=FindCardInHand(hand[selectedCard].idName);
+
+    public void SelectCard(int cardId,bool forceUnselect=false,bool disallowInstaUse=false){
+        if(cardId>=0&&cardId<hand.Count){
+            if(FindCard(hand[cardId].idName).cardType==cardType.instaUse&&!disallowInstaUse){lastSelectedCard=selectedCard;UseCard(cardId);selectedCard=-1;selectedCardRef=null;return;}
+            if(FindCard(hand[cardId].idName).cardType!=cardType.passive){
+                lastSelectedCard=selectedCard;
+                if(selectedCard==cardId){selectedCard=-1;return;}
+                if(selectedCard!=cardId&&selectedCard!=-1&&forceUnselect){selectedCard=-1;return;}//For unselecting by pressing a different card
+                selectedCard=cardId;
+                selectedCardRef=FindCard(hand[selectedCard].idName);
+            }else{selectedCard=-1;}
+        }else{Debug.LogWarning(cardId+" is an incorrect hand card id!");}
     }
-    // public void UseCardId(int cardId){UseCard(hand[cardId]);}
-    // public void UseCardIdName(string cardNameId){UseCard(cardsList.Find(x=>x.idName==cardNameId));}
-    // public void UseCard(Card card){
-    //     if(energy>=card.cost){
-    //         if(card.cardType!=cardType.passive){
-    //             // hand.RemoveAt(cardId);
-    //             hand.RemoveAt(hand.FindIndex(x=>x.idName==card.idName));
-    //             if(instaRerollOnUse){RerollHand();}
-    //             else{UpdateUiWithHand();}
-    //         }
-    //     }else{}
-    // }
+    public void SelectUp(){
+        for(int i=selectedCard+1; i<hand.Count; i++){
+            if(FindCard(hand[i].idName).cardType != cardType.passive){
+                SelectCard(i, disallowInstaUse:true);
+                return;
+            }
+        }
+
+        if(infiniteScroll){
+        for(int i=0; i<hand.Count; i++){
+            if(FindCard(hand[i].idName).cardType != cardType.passive){
+                SelectCard(i, disallowInstaUse: true);
+                return;
+            }
+        }
+    }
+    }
+    public void SelectDown(){
+        if(selectedCard==-1&&hand.Count>1){
+            if(FindCard(hand[hand.Count-1].idName).cardType != cardType.passive){
+                SelectCard(hand.Count-1, disallowInstaUse:true);
+            }//else{selectedCard=hand.Count-1;}
+        }
+
+        for(int i=selectedCard-1; i>=0; i--){
+            if(FindCard(hand[i].idName).cardType != cardType.passive){
+                SelectCard(i, disallowInstaUse:true);
+                return;
+            }
+        }
+
+        if(infiniteScroll){
+            for(int i=hand.Count-1; i>=0; i--){
+                if(FindCard(hand[i].idName).cardType != cardType.passive){
+                    SelectCard(i, disallowInstaUse: true);
+                    return;
+                }
+            }
+        }
+    }
+
     [Button("UseSelectedCard")]
     public void UseSelectedCard(){if(selectedCard!=-1)UseCard(selectedCard);}
     public void UseCard(int cardId){
         if(cardId>=0&&cardId<hand.Count){
-            Card card=hand[cardId];
-            if(energy>=card.cost){
+            Card card=FindCard(hand[cardId].idName);
+            if(energy>=card.cost&&(!lockingBlocksUse||(lockingBlocksUse&&!hand[cardId].locked))){
                 if(card.cardType!=cardType.passive){
-                    hand.RemoveAt(cardId);
+                    RemoveCardFromHand(cardId);
                     energy-=card.cost;
                     if(autoRefillOnUse){FillHand();}
                     if(instaRerollOnUse){RerollHand();}
                     else{UpdateUiWithHand();}
                 }
-            }else{Debug.Log("You broke");}
+            }else{
+                if(energy<card.cost){
+                    Debug.Log("You broke");
+                }
+                if(lockingBlocksUse&&hand[cardId].locked){
+                    Debug.Log("Its locked");
+                }
+            }
             selectedCard=-1;
+            selectedCardRef=null;
             if(hand.Count<=0&&autoRefillOnEmptyHand){
                 RerollHand();
             }
-        }else{Debug.LogWarning(cardId+" is an incorrect card id!");}
+            return;
+        }else{Debug.LogWarning(cardId+" is an incorrect hand card id!");}
+    }
+    public void LockSelectedCard(){LockCard(selectedCard);}
+    public void LockCard(int cardId){
+        if(cardId>=0&&cardId<hand.Count){
+            if(hand.FindAll(x=>x.locked).Count<lockedCardsCap||lockedCardsCap==-1){
+                if(locks>0||hand[cardId].beenLocked){
+                    if(!hand[cardId].beenLocked)locks-=1;
+
+                    hand[cardId].locked=true;
+                    hand[cardId].beenLocked=true;
+                }else if(locks<=0){
+                    Debug.Log("No locks left.");
+                }
+            }else if(hand.FindAll(x=>x.locked).Count>=lockedCardsCap&&lockedCardsCap!=-1){
+                Debug.Log("Locked cards capped.");
+            }
+        }else{Debug.LogWarning(cardId+" is an incorrect hand card id!");}
+    }
+    public void UnlockSelectedCard(){UnlockCard(selectedCard);}
+    public void UnlockCard(int cardId){
+        if(cardId>=0&&cardId<hand.Count){
+            if(locks>0||hand[cardId].beenLocked){
+                if(!hand[cardId].beenLocked)locks-=1;//Lets say if it was not locked by the player or smth
+
+                hand[cardId].locked=false;
+            }
+        }else{Debug.LogWarning(cardId+" is an incorrect hand card id!");}
+    }
+    public void ToggleLockHoveredCard(){ToggleLockCard(hoveredCard);}
+    public void ToggleLockSelectedCard(){ToggleLockCard(selectedCard);}
+    public void ToggleLockHoveredOrSelectedCard(){
+        if(hoveredCard!=-1)ToggleLockCard(hoveredCard);
+        if(selectedCard!=-1)ToggleLockCard(selectedCard);
+    }
+    public void ToggleLockCard(int cardId){
+        if(cardId>=0&&cardId<hand.Count){
+            if(!hand[cardId].locked&&hand.FindAll(x=>x.locked).Count>=lockedCardsCap&&lockedCardsCap!=-1){
+                Debug.Log("Locked cards capped.");
+            }
+            if(hand[cardId].locked||(!hand[cardId].locked&&hand.FindAll(x=>x.locked).Count<lockedCardsCap||lockedCardsCap==-1)){
+                if(locks>0||hand[cardId].beenLocked){
+                    if(!hand[cardId].beenLocked){locks-=1;}
+
+                    hand[cardId].locked=!hand[cardId].locked;
+                    if(hand[cardId].locked){hand[cardId].beenLocked=true;}
+                    return;
+                }else if(locks<=0){
+                    Debug.Log("No locks left.");
+                }
+            }
+            
+        }else{Debug.LogWarning(cardId+" is an incorrect hand card id!");}
     }
 
-    IEnumerator RegenerateEnergyI(){
-        yield return new WaitForSeconds(energyRegenTime);
-        energy+=energyRegenRate;
-        StartCoroutine(RegenerateEnergyI());
+    public void RemoveCardFromHand(int cardId){hand.RemoveAt(cardId);}
+    void AddCleanHandInfo(string cardIdName){
+        hand.Add(new CardHandInfo(){
+            idName=cardIdName,
+            useTimer=-1,
+            inactive=false,
+            locked=false,
+        });
     }
-
 
     
+    CardHandInfo CloneHandInfo(CardHandInfo originalCardHandInfo){
+        string json = JsonUtility.ToJson(originalCardHandInfo);
+        CardHandInfo clonedCardHandInfo = JsonUtility.FromJson<CardHandInfo>(json);
+        return clonedCardHandInfo;
+    }
     Card CloneCard(Card originalCard){
         string json = JsonUtility.ToJson(originalCard);
         Card clonedCard = JsonUtility.FromJson<Card>(json);
         return clonedCard;
     }
-    Card CloneCardById(int originalCardId){
-        string json = JsonUtility.ToJson(cardsList[originalCardId]);
-        Card clonedCard = JsonUtility.FromJson<Card>(json);
-        return clonedCard;
-    }
-    public Card FindCard(string cardIdName){
-        return cardsList.Find(x=>x.idName==cardIdName);
-    }
-    public Card FindCardInHand(string cardIdName){
-        return hand.Find(x=>x.idName==cardIdName);
-    }
-
-    void OnDestroy(){
-        // if(cardUiTemplate!=null)Destroy(cardUiTemplate);
+    public Card FindCard(string idName){
+        return cardsList.Find(x=>x.idName==idName);
     }
 }
 
@@ -204,12 +354,18 @@ public class Card{
     [TextArea]public string description;
     public cardType cardType;
     public int cost;
+    private bool IsNotPassive() => cardType != cardType.passive;
     private bool IsNotPassiveOrInstaUse() => cardType != cardType.passive && cardType != cardType.instaUse;
-    private bool IsNotInstaUse() => cardType != cardType.instaUse;
-    // [ShowIf("@!this.cardType.Equals(cardType.passive)&&!this.cardType.Equals(cardType.instaUse)")]public float useRange=3f;
     [ShowIf("IsNotPassiveOrInstaUse")]public float useRange=3f;
-    // [ShowIf("@this.cardType.Equals(cardType.ability)")]public float useTime=2f;
-    [ShowIf("IsNotPassiveOrInstaUse")]public float useTime=2f;
+    [ShowIf("IsNotPassive")]public float useTime=2f;
+}
+[System.Serializable]
+public class CardHandInfo{
+    public string idName;
+    public float useTimer=-1;
+    public bool inactive;
+    public bool locked;
+    public bool beenLocked;
 }
 public enum cardType{instaUse,ability,structure,passive}
 [System.Serializable]

@@ -4,30 +4,29 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using UnityEngine.Rendering;
+using Sirenix.OdinInspector;
 
 public class CardsUIGroup : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler{
-    [SerializeField] float defaultPos=250f;
+    [DisableIf("@this.defaultHidden")][SerializeField] bool hoverable=false;
+    [DisableIf("@this.hoverable")][SerializeField] bool defaultHidden=true;
+    [SerializeField] float shownPos=250f;
     [SerializeField] float hiddenPos=-20f;
     Vector2 targetPos;
-    // [SerializeField] float defaultPadding=45f;
-    // [SerializeField] float hiddenPadding=-200f;
-    // float targetPadding;
-    // HorizontalLayoutGroup layoutGroup;
     RectTransform rt;
     void Start(){
         rt=GetComponent<RectTransform>();
         targetPos=new Vector2(0,hiddenPos);
-        // layoutGroup=GetComponent<HorizontalLayoutGroup>();
-        // defaultPadding=layoutGroup.padding.bottom;
-        // targetPadding=hiddenPadding;
+        rt.anchoredPosition=targetPos;
     }
     void Update(){
         float _step=Time.fixedDeltaTime*100;
         rt.anchoredPosition=Vector2.MoveTowards(rt.anchoredPosition,targetPos,_step);
-        // layoutGroup.padding.bottom=(int)Mathf.Lerp(layoutGroup.padding.bottom,targetPadding,_step);
-        // if(layoutGroup.padding.bottom!=targetPadding){LayoutRebuilder.ForceRebuildLayoutImmediate(rt);}
 
+        if(!hoverable){
+            if(defaultHidden){if(targetPos.y!=hiddenPos)targetPos=new Vector2(0,hiddenPos);}
+            else{if(targetPos.y!=shownPos)targetPos=new Vector2(0,shownPos);}
+        }
     }
-    public void OnPointerEnter(PointerEventData eventData){targetPos=new Vector2(0,defaultPos);}//targetPadding=defaultPadding;}
-    public void OnPointerExit(PointerEventData eventData){targetPos=new Vector2(0,hiddenPos);}//targetPadding=hiddenPadding;}
+    public void OnPointerEnter(PointerEventData eventData){if(hoverable)targetPos=new Vector2(0,shownPos);}
+    public void OnPointerExit(PointerEventData eventData){if(hoverable)targetPos=new Vector2(0,hiddenPos);}
 }

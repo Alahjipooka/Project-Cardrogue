@@ -6,8 +6,20 @@ using UnityEngine.EventSystems;
 using UnityEngine.Rendering;
 
 public class CardButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler{
-
-    // void Click(){}
-    public void OnPointerEnter(PointerEventData eventData){if(CardManager.instance.selectedCard==-1){transform.parent.GetComponent<CardEntity>().HoverEnter();}}
-    public void OnPointerExit(PointerEventData eventData){transform.parent.GetComponent<CardEntity>().HoverExit();}
+    CardEntity parentCardEnt;
+    void Start(){
+        parentCardEnt=transform.parent.GetComponent<CardEntity>();
+    }
+    public void OnPointerEnter(PointerEventData eventData){
+        if(CardManager.instance.selectedCard==-1&&CardManager.instance.hoveredCard!=parentCardEnt.handId){
+            CardManager.instance.hoveredCard=parentCardEnt.handId;
+            parentCardEnt.HoverEnter();
+        }
+    }
+    public void OnPointerExit(PointerEventData eventData){
+        parentCardEnt.HoverExit();
+        if(CardManager.instance.hoveredCard==parentCardEnt.handId&&CardManager.instance.hoveredCard!=-1){
+            CardManager.instance.hoveredCard=-1;
+        }
+    }
 }
