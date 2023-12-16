@@ -6,7 +6,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.Rendering;
 using Sirenix.OdinInspector;
 
-public class CardsUIGroup : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler{
+public class PopupUI : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler{
     [DisableIf("@this.defaultHidden")][SerializeField] bool hoverable=false;
     [DisableIf("@this.hoverable")][SerializeField] bool defaultHidden=true;
     [SerializeField] float shownPos=250f;
@@ -27,6 +27,8 @@ public class CardsUIGroup : MonoBehaviour, IPointerEnterHandler, IPointerExitHan
             else{if(targetPos.y!=shownPos)targetPos=new Vector2(0,shownPos);}
         }
     }
-    public void OnPointerEnter(PointerEventData eventData){if(hoverable)targetPos=new Vector2(0,shownPos);}
-    public void OnPointerExit(PointerEventData eventData){if(hoverable)targetPos=new Vector2(0,hiddenPos);}
+    public void Show(){targetPos=new Vector2(0,shownPos);}
+    public void Hide(){targetPos=new Vector2(0,hiddenPos);}
+    public void OnPointerEnter(PointerEventData eventData){if(hoverable)Show();}
+    public void OnPointerExit(PointerEventData eventData){if(hoverable)Hide();}
 }

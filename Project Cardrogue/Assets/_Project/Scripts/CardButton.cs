@@ -12,6 +12,7 @@ public class CardButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHandl
     }
     public void OnPointerEnter(PointerEventData eventData){
         if(CardManager.instance.selectedCard==-1&&CardManager.instance.hoveredCard!=parentCardEnt.handId){
+            if(parentCardEnt.isLeftHand){CardManager.instance.leftHandIsHovered=true;}
             CardManager.instance.hoveredCard=parentCardEnt.handId;
             parentCardEnt.HoverEnter();
         }
@@ -19,7 +20,7 @@ public class CardButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHandl
     public void OnPointerExit(PointerEventData eventData){
         parentCardEnt.HoverExit();
         if(CardManager.instance.hoveredCard==parentCardEnt.handId&&CardManager.instance.hoveredCard!=-1){
-            CardManager.instance.hoveredCard=-1;
+            if(!parentCardEnt.isLeftHand){CardManager.instance.hoveredCard=-1;}
         }
     }
 }

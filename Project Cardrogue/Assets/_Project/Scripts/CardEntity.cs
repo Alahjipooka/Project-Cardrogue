@@ -10,14 +10,23 @@ using UnityEngine.Rendering;
 
 public class CardEntity : MonoBehaviour{
     [Header("Config")]
+    [ChildGameObjectsOnly][SerializeField]TextMeshProUGUI idTxt;
     [ChildGameObjectsOnly][SerializeField]TextMeshProUGUI displayNameTxt;
     [ChildGameObjectsOnly][SerializeField]TextMeshProUGUI descNameTxt;
+    [ChildGameObjectsOnly][SerializeField]GameObject costParent;
     [ChildGameObjectsOnly][SerializeField]TextMeshProUGUI costTxt;
+    [ChildGameObjectsOnly][SerializeField]GameObject useTimeParent;
+    [ChildGameObjectsOnly][SerializeField]TextMeshProUGUI useTimeTxt;
+    [ChildGameObjectsOnly][SerializeField]GameObject useRangeParent;
+    [ChildGameObjectsOnly][SerializeField]TextMeshProUGUI useRangeTxt;
+    [ChildGameObjectsOnly][SerializeField]BarValue useTimerOverlay;
+    [ChildGameObjectsOnly][SerializeField]GameObject lockParent;
     [ChildGameObjectsOnly][SerializeField]Image lockSpr;
     [SerializeField]Sprite lockedSprite;
     [SerializeField]Sprite unlockedSprite;
     [SerializeField]Sprite beenlockedSprite;
     [Header("Variables")]
+    [ReadOnly]public bool isLeftHand;
     [ReadOnly]public int handId;
     [ReadOnly]public string cardIdName;
     Vector2 originalScale;
@@ -43,8 +52,9 @@ public class CardEntity : MonoBehaviour{
         img=GetComponent<Image>();
         canvas=GetComponent<Canvas>();
     }
-    public void SetProperties(int _id, string _idName="",float angle=0){
+    public void SetProperties(int _id, bool _isLeftHand=false, string _idName="",float angle=0){
         handId=_id;
+        isLeftHand=_isLeftHand;
         if(_idName!=""){cardIdName=_idName;}
         Card card=CardManager.instance.FindCard(this.cardIdName);
 
@@ -60,10 +70,25 @@ public class CardEntity : MonoBehaviour{
         canvas.sortingOrder=targetZ;
 
         transform.GetChild(0).GetComponent<Image>().color=CardManager.instance.cardTypesColors[(int)card.cardType].color;
+        idTxt.text=(handId+1).ToString();
         displayNameTxt.text=card.displayName;
         descNameTxt.text=card.description;
         costTxt.text=card.cost.ToString();
+        useTimeTxt.text=card.useTime.ToString();
+        useRangeTxt.text=card.useRange.ToString();
+        if(isLeftHand){useTimerOverlay.SetValueName("cardUseTimerLeftHand"+handId);}
+        else{useTimerOverlay.SetValueName("cardUseTimerMainHand"+handId);}
+        if(card.useTime<=0){useTimeParent.SetActive(false);}
+        if(card.useRange<=0){useRangeParent.SetActive(false);}
 
+        if(isLeftHand){
+            Destroy(GetComponentInChildren<CardButton>().GetComponent<Button>());
+
+            costParent.SetActive(false);
+            lockParent.SetActive(false);
+            idTxt.text="";
+        }
+        
         _isSetup=true;
     }
     void Update(){
@@ -77,28 +102,41 @@ public class CardEntity : MonoBehaviour{
 
         canvas.sortingOrder=(int)Vector2.MoveTowards(new Vector2(canvas.sortingOrder,0),new Vector2(targetZ,0),_step).x;
 
-        if(_isSetup&&CardManager.instance.selectedCard==handId){
-            targetScale=originalScale*CardManager.instance.cardSelectScaleMult;
-            targetPos=new Vector2(originalPos.x,originalPos.y+CardManager.instance.cardSelectOffset);
-            targetZ=CardManager.instance.handSize+10;
-            targetRot=0;
-        }else{
-            if(CardManager.instance.hoveredCard!=handId){
-                targetScale=originalScale;
-                targetPos=originalPos;
-                targetZ=handId;
-                targetRot=originalRot;
-            }
-        }
-        
-        if(handId<CardManager.instance.hand.Count){
-            if(CardManager.instance.hand[handId]!=null){
-                if(CardManager.instance.hand[handId].locked&&lockSpr.sprite!=lockedSprite){
-                    lockSpr.sprite=lockedSprite;
+        if(!isLeftHand){
+            if(_isSetup&&CardManager.instance.selectedCard==handId){
+                targetScale=originalScale*CardManager.instance.cardSelectScaleMult;
+                targetPos=new Vector2(originalPos.x,originalPos.y+CardManager.instance.cardSelectOffset);
+                targetZ=CardManager.instance.handSize+10;
+                targetRot=0;
+            }else{
+                if(CardManager.instance.hoveredCard!=handId){
+                    targetScale=originalScale;
+                    targetPos=originalPos;
+                    targetZ=handId;
+                    targetRot=originalRot;
                 }
-                if(!CardManager.instance.hand[handId].locked){
-                    if(!CardManager.instance.hand[handId].beenLocked&&lockSpr.sprite!=unlockedSprite){lockSpr.sprite=unlockedSprite;}
-                    else if(CardManager.instance.hand[handId].beenLocked&&lockSpr.sprite!=beenlockedSprite){lockSpr.sprite=beenlockedSprite;}
+            }
+            
+            if(handId<CardManager.instance.hand.Count){
+                if(CardManager.instance.hand[handId]!=null){
+                    if(CardManager.instance.hand[handId].locked&&lockSpr.sprite!=lockedSprite){
+                        lockSpr.sprite=lockedSprite;
+                    }
+                    if(!CardManager.instance.hand[handId].locked){
+                        if(!CardManager.instance.hand[handId].beenLocked&&lockSpr.sprite!=unlockedSprite){lockSpr.sprite=unlockedSprite;}
+                        else if(CardManager.instance.hand[handId].beenLocked&&lockSpr.sprite!=beenlockedSprite){lockSpr.sprite=beenlockedSprite;}
+                    }
+                }
+            }
+        }else{//If in the using list
+            if(_isSetup&&CardManager.instance.leftHandHoveredId==handId){
+                targetZ=CardManager.instance.leftHand.Count+5;
+                targetRot=0;
+            }else{
+                if(CardManager.instance.leftHandHoveredId!=handId){
+                    targetZ=handId;
+                    // targetZ=CardManager.instance.leftHand.Count-(handId+1);//Reverse
+                    targetRot=originalRot;
                 }
             }
         }
@@ -116,13 +154,13 @@ public class CardEntity : MonoBehaviour{
     }
     public void LockCard(){CardManager.instance.ToggleLockCard(handId);}
     public void HoverEnter(){
-        if(_isSetup){
-            targetScale=originalScale*1.2f;
-            // targetPos=new Vector2(originalPos.x,originalPos.y+50f);
-            // targetPos=new Vector2(originalPos.x,originalPos.y+250f);
-            // targetPos=new Vector2(originalPos.x,originalPos.y+150f);
+        if(_isSetup&&!isLeftHand){
+            targetScale=originalScale*CardManager.instance.cardHoverScaleMult;
             targetPos=new Vector2(originalPos.x,originalPos.y+CardManager.instance.cardHoverOffset);
             targetZ=CardManager.instance.handSize+5;
+            targetRot=0;
+        }else if(isLeftHand){
+            targetZ=CardManager.instance.leftHand.Count+5;
             targetRot=0;
         }
     }
@@ -131,6 +169,10 @@ public class CardEntity : MonoBehaviour{
             targetScale=originalScale;
             targetPos=originalPos;
             targetZ=handId;
+            targetRot=originalRot;
+        }else if(isLeftHand){
+            targetZ=handId;
+            // targetZ=CardManager.instance.leftHand.Count-(handId+1);//Reverse
             targetRot=originalRot;
         }
     }
