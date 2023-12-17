@@ -11,6 +11,8 @@ public class CardManager : MonoBehaviour{   public static CardManager instance;
     [AssetsOnly][SerializeField] GameObject cardUiPrefab;
     [SerializeField] public bool angledHandLayout=false;
     [DisableIf("angledHandLayout")][SerializeField] public bool automaticallyAngleWhenAbove=true;
+    [SerializeField] bool clickingOnSameCardUnselects=true;
+    [SerializeField] bool clickingOnDifferentCardUnselects=true;
     [DisableIf("angledHandLayout")][ShowIf("automaticallyAngleWhenAbove")][SerializeField] public int automaticallyAngleWhenAboveNumber=6;
     [SerializeField] RectTransform handLayoutGroup;
     [SerializeField] RectTransform leftHandLayoutGroup;
@@ -26,8 +28,9 @@ public class CardManager : MonoBehaviour{   public static CardManager instance;
     public float energyRegenTime=5f;
     public int energyRegenRate=1;
     public bool lockingBlocksUse=false;
+    public bool unselectCardsAfterUsing=false;
     public bool autoRefillOnEmptyHand=true;
-    public bool instaRefillWhenLeftWithUnusable=false;//If left with 1 status
+    public bool instaRefillWhenLeftWithUnusable=false;//If left with 1 status card in mainHand
     [DisableIf("@this.instaRerollOnUse")]public bool autoRefillOnUse=false;
     [DisableIf("@this.autoRefillOnUse")]public bool instaRerollOnUse=false;
     public bool infiniteScroll=false;
@@ -73,30 +76,30 @@ public class CardManager : MonoBehaviour{   public static CardManager instance;
         if(Input.GetKeyDown(KeyCode.L)){ToggleLockHoveredOrSelectedCard();}
         if(Input.GetKeyDown(KeyCode.E)){energy+=10;}
         if(Input.GetKeyDown(KeyCode.K)){locks+=2;}
-        
-        
         for(int i=0; i<=8; i++){
             if(Input.GetKeyDown(KeyCode.Alpha1 + i)){
                 SelectCard(i);
             }
         }
         if(Input.GetKeyDown(KeyCode.Alpha0)){SelectCard(9);}
-
         if(Input.mouseScrollDelta.y>0||Input.GetKeyDown(KeyCode.Equals)){
             if(!leftHandIsHovered){SelectUp();}
-            else{SelectUsingUp();}
+            else{SelectLeftHandUp();}
         }
         else if(Input.mouseScrollDelta.y<0||Input.GetKeyDown(KeyCode.Minus)){
             if(!leftHandIsHovered){SelectDown();}
-            else{SelectUsingDown();}
+            else{SelectLeftHandDown();}
         }
 
+        ///Clamp values, count timers etc
         if(selectedCardRef==null&&selectedCard!=-1){
         // if(selectedCardRef==null&&(selectedCard!=-1||lastSelectedCard!=selectedCard)){
             selectedCardRef=FindCard(hand[selectedCard].idName);
         }else if(selectedCard==-1){selectedCardRef=null;}
-        if(selectedCard!=-1){leftHandIsHovered=false;}
-        if(!leftHandIsHovered){leftHandHoveredId=-1;}
+        // if(selectedCard!=-1){leftHandIsHovered=false;} //Disable accidental scrolling of leftHand when a mainHand card is already selected?
+        if(selectedCard>=hand.Count){selectedCard=hand.Count-1;}
+        if(hand.Count<=0 || selectedCard<-1){selectedCard=-1;}
+        if(!leftHandIsHovered || leftHand.Count<=0){leftHandHoveredId=-1;}
 
         energyMax=Mathf.Clamp(energyMax,0,9999);
         energy=Mathf.Clamp(energy,0,energyMax);
@@ -104,35 +107,58 @@ public class CardManager : MonoBehaviour{   public static CardManager instance;
 
         if(energyRegenTimer>0){energyRegenTimer-=Time.deltaTime;}
         else{
-            energy+=energyRegenRate;
+            AddEnergy(energyRegenRate);
             energyRegenTimer=energyRegenTime;
         }
 
+
+        /// Tick down useTimers and UseCards
         for(int i=0;i<hand.Count;i++){
-            if(FindCard(hand[i].idName).cardType==cardType.status&&!hand[i].inactive){
+            Card _card=FindCard(hand[i].idName);
+            if(_card.tickInMainHand&&!hand[i].inactive){
                 if(hand[i].useTimer>0){hand[i].useTimer-=Time.deltaTime;}
                 else{if(hand[i].useTimer!=-1){
-                    energy-=FindCard(hand[i].idName).cost;
+                    energy-=hand[i].costCurrent;
+
                     hand[i].useTimer=FindCard(hand[i].idName).useTime;
-                    UpdateHandUI();
+                    if(_card.loopingTimes!=-1)hand[i].loopedTimes+=1;
+
+                    if(_card.loopingTimes!=-1&&hand[i].loopedTimes>=_card.loopingTimes){
+                        hand.RemoveAt(i);
+                        UpdateHandUI();
+                    }
                 }}
             }
         }
         for(int i=0;i<leftHand.Count;i++){
             if(!leftHand[i].inactive){
+                Card _card=FindCard(leftHand[i].idName);
                 if(leftHand[i].useTimer>0){leftHand[i].useTimer-=Time.deltaTime;}
-                else{if(leftHand[i].useTimer!=-1){leftHand.RemoveAt(i);UpdateLeftHandUI();}}
+                else{if(leftHand[i].useTimer!=-1){
+                    energy-=leftHand[i].costCurrent;
+
+                    leftHand[i].useTimer=FindCard(leftHand[i].idName).useTime;
+                    if(_card.loopingTimes!=-1)leftHand[i].loopedTimes+=1;
+
+                    if(_card.loopingTimes!=-1&&leftHand[i].loopedTimes>=_card.loopingTimes){
+                        leftHand.RemoveAt(i);
+                        UpdateLeftHandUI();
+                    }
+                }}
             }
         }
 
+        //Not sure if I should leave this or refactor it into unplayable
         if(instaRefillWhenLeftWithUnusable){
             if(hand.Count==1){
                 if(FindCard(hand[0].idName).cardType==cardType.status){
+                // if(hand[0].isUnplayable){
                     FillHand();
                 }
             }
         }
 
+        /// Update Hand Layout when needed
         if(automaticallyAngleWhenAbove){
             if(hand.Count>automaticallyAngleWhenAboveNumber){
                 if(!angledHandLayout){
@@ -164,22 +190,24 @@ public class CardManager : MonoBehaviour{   public static CardManager instance;
             });
         }
         foreach(Card c in cardsList){
-            if(c.cardType==cardType.status){c.cost=1;c.useRange=0;c.useTime=Random.Range(0, 30+1);}//it could be interesting if a status card would take energy per use time
+            if(c.cardType==cardType.status){c.cost=1;c.useRange=0;c.useTime=Random.Range(0, 30+1);c.tickInMainHand=true;c.loopingTimes=-1;c.dismissable=true;}//c.unplayable=true;}
             if(c.cardType==cardType.instaUse){c.useRange=0;}//c.useTime=0;}
             if(c.cardType==cardType.structure){c.useTime=Random.Range(1, 30+1);}//c.useTime=0;}
+            if(c.unplayable){c.description="Unplayable.\n"+c.description;}
         }
     }
 
-    [Button("DrawCard")]
-    public void DrawCard(){
+    public void DrawCard(bool bypassHandSize=false){
         int _randCardId=Random.Range(0, cardsList.Count);
         DrawSpecificCard(cardsList[_randCardId].idName);
     }
+    [Button("DrawCardOverride")]
+    public void DrawCardOverride(){DrawCard(true);}
     public void DrawSpecificCard(string cardIdName,bool bypassHandSize=false){
         int _maxSize=handSize;
         if(handCapsAtMaxPlusLocked){_maxSize=handSize+_lockedCardsCount();}
         if(hand.Count<_maxSize||bypassHandSize){
-            if((FindCard(cardIdName).cardType==cardType.status&&autoMoveStatusToLeftHand)||!autoMoveStatusToLeftHand){
+            if((FindCard(cardIdName).cardType==cardType.status&&autoMoveStatusToLeftHand)&&(leftHandCap==-1||(leftHand.Count<leftHandCap&&leftHandCap!=-1))){
                 AddCleanHandInfo(FindCard(cardIdName).idName);
                 MoveCardToLeftHand(hand.Count-1);
             }else{
@@ -291,19 +319,24 @@ public class CardManager : MonoBehaviour{   public static CardManager instance;
 
     public void SelectCard(int cardId,bool forceUnselect=false,bool disallowInstaUse=false){
         if(cardId>=0&&cardId<hand.Count){
-            if(FindCard(hand[cardId].idName).cardType==cardType.instaUse&&!disallowInstaUse){lastSelectedCard=selectedCard;UseCard(cardId);UnselectCard();return;}
-            if(FindCard(hand[cardId].idName).cardType!=cardType.status){
+            Card _card=FindCard(hand[cardId].idName);
+            if((_card.cardType==cardType.instaUse&&!disallowInstaUse)
+            ||(_card.cardType==cardType.status&&!hand[cardId].isUnplayable&&!disallowInstaUse)
+                ){lastSelectedCard=selectedCard;UseCard(cardId);UnselectCard();return;}
+            if(!hand[cardId].isUnplayable){
                 lastSelectedCard=selectedCard;
-                if(selectedCard==cardId){selectedCard=-1;return;}
-                if(selectedCard!=cardId&&selectedCard!=-1&&forceUnselect){selectedCard=-1;return;}//For unselecting by pressing a different card
+                if(forceUnselect){leftHandIsHovered=false;}//So that clicking on main hand unselects left hand from scrolling
+                if(selectedCard==cardId&&clickingOnSameCardUnselects){UnselectCard();return;}
+                if(selectedCard!=cardId&&selectedCard!=-1&&clickingOnDifferentCardUnselects&&forceUnselect){UnselectCard();return;}//For unselecting by pressing a different card
                 selectedCard=cardId;
-                selectedCardRef=FindCard(hand[selectedCard].idName);
-            }else{selectedCard=-1;}
+                selectedCardRef=_card;
+            }else{UnselectCard();Debug.Log("Card is unplayable.");}
         }else{Debug.LogWarning(cardId+" is an incorrect hand card id!");}
     }
     public void SelectUp(){
         for(int i=selectedCard+1; i<hand.Count; i++){
-            if(FindCard(hand[i].idName).cardType != cardType.status){
+            // if(FindCard(hand[i].idName).cardType != cardType.status){
+            if(!hand[i].isUnplayable){
                 SelectCard(i, disallowInstaUse:true);
                 return;
             }
@@ -311,7 +344,8 @@ public class CardManager : MonoBehaviour{   public static CardManager instance;
 
         if(infiniteScroll){
             for(int i=0; i<hand.Count; i++){
-                if(FindCard(hand[i].idName).cardType != cardType.status){
+                // if(FindCard(hand[i].idName).cardType != cardType.status){
+                if(!hand[i].isUnplayable){
                     SelectCard(i, disallowInstaUse: true);
                     return;
                 }
@@ -320,13 +354,15 @@ public class CardManager : MonoBehaviour{   public static CardManager instance;
     }
     public void SelectDown(){
         if(selectedCard==-1&&hand.Count>1){
-            if(FindCard(hand[hand.Count-1].idName).cardType != cardType.status){
+            // if(FindCard(hand[hand.Count-1].idName).cardType != cardType.status){
+            if(!hand[hand.Count-1].isUnplayable){
                 SelectCard(hand.Count-1, disallowInstaUse:true);
             }//else{selectedCard=hand.Count-1;}
         }
 
         for(int i=selectedCard-1; i>=0; i--){
-            if(FindCard(hand[i].idName).cardType != cardType.status){
+            // if(FindCard(hand[i].idName).cardType != cardType.status){
+            if(!hand[i].isUnplayable){
                 SelectCard(i, disallowInstaUse:true);
                 return;
             }
@@ -334,7 +370,8 @@ public class CardManager : MonoBehaviour{   public static CardManager instance;
 
         if(infiniteScroll){
             for(int i=hand.Count-1; i>=0; i--){
-                if(FindCard(hand[i].idName).cardType != cardType.status){
+                // if(FindCard(hand[i].idName).cardType != cardType.status){
+                if(!hand[i].isUnplayable){
                     SelectCard(i, disallowInstaUse: true);
                     return;
                 }
@@ -347,64 +384,92 @@ public class CardManager : MonoBehaviour{   public static CardManager instance;
     }
 
 
-    public void SelectUsingUp(){
-        for(int i=leftHandHoveredId+1; i<leftHand.Count; i++){
-            leftHandHoveredId=i;
+    public void SelectLeftHandUp(){
+        if(leftHandHoveredId+1<leftHand.Count){
+            UnselectCard();
+            leftHandHoveredId=leftHandHoveredId+1;
             return;
         }
+        // for(int i=leftHandHoveredId+1; i<leftHand.Count; i++){
+        //     leftHandHoveredId=i;
+        //     return;
+        // }
 
         if(infiniteScroll){
-            for(int i=0; i<leftHand.Count; i++){
-                leftHandHoveredId=i;
-                return;
-            }
+            UnselectCard();
+            leftHandHoveredId=0;
+            // for(int i=0; i<leftHand.Count; i++){
+            //     leftHandHoveredId=i;
+            //     return;
+            // }
         }
     }
-    public void SelectUsingDown(){
+    public void SelectLeftHandDown(){
         if(leftHandHoveredId==-1&&leftHand.Count>1){
             leftHandHoveredId=leftHand.Count-1;
         }
-
-        for(int i=leftHandHoveredId-1; i>=0; i--){
-            leftHandHoveredId=i;
+        
+        
+        if(leftHandHoveredId-1>=0){
+            UnselectCard();
+            leftHandHoveredId=leftHandHoveredId-1;
             return;
         }
+        // for(int i=leftHandHoveredId-1; i>=0; i--){
+        //     leftHandHoveredId=i;
+        //     return;
+        // }
 
         if(infiniteScroll){
-            for(int i=leftHand.Count-1; i>=0; i--){
-                leftHandHoveredId=i;
-                return;
-            }
+            UnselectCard();
+            leftHandHoveredId=leftHand.Count-1;
+            // for(int i=leftHand.Count-1; i>=0; i--){
+            //     leftHandHoveredId=i;
+            //     return;
+            // }
         }
     }
 
-    [Button("UseSelectedCard")]
-    public void UseSelectedCard(){if(selectedCard!=-1)UseCard(selectedCard);}
-    public void UseCard(int cardId){
+    [Button("UseSelectedCardBypass")]
+    public void UseSelectedCardBypass(){if(selectedCard!=-1)UseCard(selectedCard,true);}
+    public void UseSelectedCard(bool bypassUnplayable=false){if(selectedCard!=-1)UseCard(selectedCard,bypassUnplayable);}
+    public void UseSelectedCardAtPos(Vector2 pos,bool bypassUnplayable=false){if(selectedCard!=-1)UseCardAtPos(selectedCard,pos,bypassUnplayable);}
+    public void UseCard(int cardId,bool bypassUnplayable=false){UseCardAtPos(cardId,Player.instance.transform.position,bypassUnplayable);}
+    public void UseCardAtPos(int cardId,Vector2 pos,bool bypassUnplayable=false){
         if(cardId>=0&&cardId<hand.Count){
             Card card=FindCard(hand[cardId].idName);
-            if(energy>=card.cost&&(!lockingBlocksUse||(lockingBlocksUse&&!hand[cardId].locked))){
+            if(energy>=hand[cardId].costCurrent&&(!lockingBlocksUse||(lockingBlocksUse&&!hand[cardId].locked))){
                 if(leftHand.Count<leftHandCap||leftHandCap==-1){
-                    if(card.cardType!=cardType.status){
-                        MoveCardToLeftHand(cardId);
-                        // RemoveCardFromHand(cardId);
-                        energy-=card.cost;
+                    // if(card.cardType!=cardType.status){
+                    if(!hand[cardId].isUnplayable||bypassUnplayable){
+                        energy-=hand[cardId].costCurrent;
+                        CardFunctionsManager.instance.CardFunction(hand[cardId].idName,pos);
                         if(autoRefillOnUse){FillHand();}
                         if(instaRerollOnUse){RerollHand();}
-                        else{UpdateUI();}
+                        MoveCardToLeftHand(cardId);
+                        UpdateUI();
+                    }else{
+                        Debug.Log("Card is unplayable.");
                     }
+                }else{
+                    Debug.LogWarning("Left hand full.");
                 }
             }else{
-                if(energy<card.cost){
+                if(energy<hand[cardId].costCurrent){
                     Debug.Log("You broke");
                 }
                 if(lockingBlocksUse&&hand[cardId].locked){
                     Debug.Log("Its locked");
                 }
             }
-            UnselectCard();
+            if(unselectCardsAfterUsing){
+                UnselectCard();
+            }else{
+                selectedCardRef=null;//to leave the id as it was but refresh the reference
+                if(selectedCard>=hand.Count){selectedCard=hand.Count-1;}
+            }
             if(hand.Count<=0&&autoRefillOnEmptyHand){
-                RerollHand();
+                FillHand();
             }
             return;
         }else{Debug.LogWarning(cardId+" is an incorrect hand card id!");}
@@ -473,30 +538,26 @@ public class CardManager : MonoBehaviour{   public static CardManager instance;
     }
 
     public CardHandInfo AddCleanHandInfo(string cardIdName){
+        Card _card=FindCard(cardIdName);
         CardHandInfo newCard=new CardHandInfo(){
             idName=cardIdName,
             useTimer=-1,
+            costCurrent=_card.cost,
+            isUnplayable=_card.unplayable,
             inactive=false,
             locked=false,
         };
         hand.Add(newCard);
         return hand[hand.Count-1];
     }
-    // public CardHandInfo AddCleanHandInfo(string cardIdName) =>
-    //     hand.Add(new CardHandInfo
-    //     {
-    //         idName = cardIdName,
-    //         useTimer = -1,
-    //         inactive = false,
-    //         locked = false,
-    //     })[^1];
-    public void RemoveCardFromHand(int cardId){hand.RemoveAt(cardId);}
+    public void RemoveCardFromHand(int cardId){hand.RemoveAt(cardId);UpdateHandUI();}
+    public void RemoveCardFromLeftHand(int cardId){leftHand.RemoveAt(cardId);UpdateLeftHandUI();}
 
     public void CleanUsingCardList(){
         leftHand=new List<CardHandInfo>(0);
         UpdateUI();
     }
-
+    public void AddEnergy(int amnt){energy+=amnt;}
     
     CardHandInfo CloneHandInfo(CardHandInfo originalCardHandInfo){
         string json = JsonUtility.ToJson(originalCardHandInfo);
@@ -521,15 +582,24 @@ public class Card{
     [TextArea]public string description;
     public cardType cardType;
     public int cost;
-    private bool IsNotstatus() => cardType != cardType.status;
-    private bool IsNotstatusOrInstaUse() => cardType != cardType.status && cardType != cardType.instaUse;
-    [ShowIf("IsNotstatusOrInstaUse")]public float useRange=3f;
-    [ShowIf("IsNotstatus")]public float useTime=2f;
+    private bool IsNotStatus() => cardType != cardType.status;
+    private bool IsNotInstaUse() => cardType != cardType.status && cardType != cardType.instaUse;
+    private bool IsNotStatusOrInstaUse() => cardType != cardType.status && cardType != cardType.instaUse;
+    [ShowIf("IsNotStatusOrInstaUse")]public float useRange=3f;
+    // [ShowIf("IsNotInstaUse")]public float useTime=2f;
+    public float useTime=2f;
+    public bool tickInMainHand=true;
+    public int loopingTimes;
+    public bool unplayable;
+    public bool dismissable;
 }
 [System.Serializable]
 public class CardHandInfo{
     public string idName;
+    public int costCurrent;
+    public bool isUnplayable;
     public float useTimer=-1;
+    public int loopedTimes;
     public bool inactive;
     public bool locked;
     public bool beenLocked;

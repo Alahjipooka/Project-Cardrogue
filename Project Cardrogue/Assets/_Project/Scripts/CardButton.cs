@@ -11,7 +11,8 @@ public class CardButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHandl
         parentCardEnt=transform.parent.GetComponent<CardEntity>();
     }
     public void OnPointerEnter(PointerEventData eventData){
-        if(CardManager.instance.selectedCard==-1&&CardManager.instance.hoveredCard!=parentCardEnt.handId){
+        // if(CardManager.instance.selectedCard==-1&&CardManager.instance.hoveredCard!=parentCardEnt.handId){
+        if(CardManager.instance.hoveredCard!=parentCardEnt.handId&&(parentCardEnt.isLeftHand||(!parentCardEnt.isLeftHand&&CardManager.instance.selectedCard==-1))){
             if(parentCardEnt.isLeftHand){CardManager.instance.leftHandIsHovered=true;}
             CardManager.instance.hoveredCard=parentCardEnt.handId;
             parentCardEnt.HoverEnter();

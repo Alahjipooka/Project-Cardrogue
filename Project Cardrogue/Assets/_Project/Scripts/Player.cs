@@ -6,6 +6,7 @@ using Cinemachine.Utility;
 using Cinemachine;
 
 public class Player : MonoBehaviour{
+    public static Player instance;
     [Header("Config")]
     [SerializeField] public float healthStart = 20f;
     [SerializeField] public float healthMax = 20f;
@@ -26,6 +27,7 @@ public class Player : MonoBehaviour{
 
 
     void Start(){
+        instance=this;
         rb=GetComponent<Rigidbody2D>();
         cm_cameraoffset=FindObjectOfType<CinemachineCameraOffset>();
         last_vertical=-1;//Face down

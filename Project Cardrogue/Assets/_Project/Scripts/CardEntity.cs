@@ -20,6 +20,7 @@ public class CardEntity : MonoBehaviour{
     [ChildGameObjectsOnly][SerializeField]GameObject useRangeParent;
     [ChildGameObjectsOnly][SerializeField]TextMeshProUGUI useRangeTxt;
     [ChildGameObjectsOnly][SerializeField]BarValue useTimerOverlay;
+    [ChildGameObjectsOnly][SerializeField]GameObject dismissParent;
     [ChildGameObjectsOnly][SerializeField]GameObject lockParent;
     [ChildGameObjectsOnly][SerializeField]Image lockSpr;
     [SerializeField]Sprite lockedSprite;
@@ -57,6 +58,9 @@ public class CardEntity : MonoBehaviour{
         isLeftHand=_isLeftHand;
         if(_idName!=""){cardIdName=_idName;}
         Card card=CardManager.instance.FindCard(this.cardIdName);
+        CardHandInfo cardHandInfo;
+        if(!isLeftHand){cardHandInfo=CardManager.instance.hand[handId];}
+        else{cardHandInfo=CardManager.instance.leftHand[handId];}
 
         if(rt==null){rt=transform.GetChild(0).GetComponent<RectTransform>();}
         
@@ -73,7 +77,7 @@ public class CardEntity : MonoBehaviour{
         idTxt.text=(handId+1).ToString();
         displayNameTxt.text=card.displayName;
         descNameTxt.text=card.description;
-        costTxt.text=card.cost.ToString();
+        costTxt.text=cardHandInfo.costCurrent.ToString();
         useTimeTxt.text=card.useTime.ToString();
         useRangeTxt.text=card.useRange.ToString();
         if(isLeftHand){useTimerOverlay.SetValueName("cardUseTimerLeftHand"+handId);}
@@ -82,11 +86,14 @@ public class CardEntity : MonoBehaviour{
         if(card.useRange<=0){useRangeParent.SetActive(false);}
 
         if(isLeftHand){
-            Destroy(GetComponentInChildren<CardButton>().GetComponent<Button>());
-
-            costParent.SetActive(false);
-            lockParent.SetActive(false);
             idTxt.text="";
+            Destroy(GetComponentInChildren<CardButton>().GetComponent<Button>());
+            
+            if(CardManager.instance.FindCard(this.cardIdName).loopingTimes==0){costParent.SetActive(false);}
+            lockParent.SetActive(false);
+            if(!card.dismissable)dismissParent.SetActive(false);
+        }else{
+            dismissParent.SetActive(false);
         }
         
         _isSetup=true;
@@ -153,6 +160,11 @@ public class CardEntity : MonoBehaviour{
         }
     }
     public void LockCard(){CardManager.instance.ToggleLockCard(handId);}
+    public void DismissCard(){
+        if(!isLeftHand){CardManager.instance.RemoveCardFromLeftHand(handId);}
+        else{CardManager.instance.RemoveCardFromLeftHand(handId);}
+    }
+
     public void HoverEnter(){
         if(_isSetup&&!isLeftHand){
             targetScale=originalScale*CardManager.instance.cardHoverScaleMult;
