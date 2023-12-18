@@ -86,7 +86,9 @@ public class CardEntity : MonoBehaviour{
         if(card.useRange<=0){useRangeParent.SetActive(false);}
 
         if(isLeftHand){
-            idTxt.text="";
+            if(card.loopingTimes>0){
+                idTxt.text=cardHandInfo.loopedTimes+" / "+card.loopingTimes;
+            }else{idTxt.text="";}
             Destroy(GetComponentInChildren<CardButton>().GetComponent<Button>());
             
             if(CardManager.instance.FindCard(this.cardIdName).loopingTimes==0){costParent.SetActive(false);}
@@ -150,7 +152,7 @@ public class CardEntity : MonoBehaviour{
     }
 
     public void SelectCard(){
-        CardManager.instance.SelectCard(handId,true);
+        CardManager.instance.SelectCard(handId,forceUnselect:true,allowInstaUse:true);
         
         if(CardManager.instance.selectedCard!=handId){
             targetScale=originalScale;
@@ -166,26 +168,30 @@ public class CardEntity : MonoBehaviour{
     }
 
     public void HoverEnter(){
-        if(_isSetup&&!isLeftHand){
-            targetScale=originalScale*CardManager.instance.cardHoverScaleMult;
-            targetPos=new Vector2(originalPos.x,originalPos.y+CardManager.instance.cardHoverOffset);
-            targetZ=CardManager.instance.handSize+5;
-            targetRot=0;
-        }else if(isLeftHand){
-            targetZ=CardManager.instance.leftHand.Count+5;
-            targetRot=0;
+        if(_isSetup){
+            if(!isLeftHand){
+                targetScale=originalScale*CardManager.instance.cardHoverScaleMult;
+                targetPos=new Vector2(originalPos.x,originalPos.y+CardManager.instance.cardHoverOffset);
+                targetZ=CardManager.instance.handSize+5;
+                targetRot=0;
+            }else{
+                targetZ=CardManager.instance.leftHand.Count+5;
+                targetRot=0;
+            }
         }
     }
     public void HoverExit(){
-        if(_isSetup&&CardManager.instance.selectedCard!=this.handId){
-            targetScale=originalScale;
-            targetPos=originalPos;
-            targetZ=handId;
-            targetRot=originalRot;
-        }else if(isLeftHand){
-            targetZ=handId;
-            // targetZ=CardManager.instance.leftHand.Count-(handId+1);//Reverse
-            targetRot=originalRot;
+        if(_isSetup){
+            if(!isLeftHand&&CardManager.instance.selectedCard!=this.handId){
+                targetScale=originalScale;
+                targetPos=originalPos;
+                targetZ=handId;
+                targetRot=originalRot;
+            }else if(isLeftHand){
+                targetZ=handId;
+                // targetZ=CardManager.instance.leftHand.Count-(handId+1);//Reverse
+                targetRot=originalRot;
+            }
         }
     }
 }

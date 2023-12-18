@@ -4,20 +4,22 @@ using UnityEngine;
 using Sirenix.OdinInspector;
 using Cinemachine.Utility;
 using Cinemachine;
+using System.Linq;
 
 public class Player : MonoBehaviour{
     public static Player instance;
     [Header("Config")]
     [SerializeField] public float healthStart = 20f;
     [SerializeField] public float healthMax = 20f;
-    [SerializeField] public float runSpeed = 20.0f;
-    [SerializeField] public float moveLimiter = 0.7f;
+    [SerializeField] public float runSpeedBase = 20.0f;
+    [SerializeField] public float diagonalSpeed = 0.7f;
     [SerializeField] public float cameraOffsetChangeSpeed = 1f;
     [ChildGameObjectsOnly][SerializeField] public GameObject useParameter;
     [SerializeField] float useParameterBaseScale=10f;
 
     [Header("Variables")]
     [DisableInEditorMode][SerializeField] public float health = 20f;
+    [SerializeField] public float runSpeedCurrent;
     float horizontal;
     float vertical;
     [SerializeField]float last_vertical=-1;
@@ -39,14 +41,22 @@ public class Player : MonoBehaviour{
         SetUseParameter();
 
         health=Mathf.Clamp(health,0,healthMax);
+
+        if(CardManager.instance.leftHand.Any(x=>x.idName=="speedBuff")){
+            runSpeedCurrent=runSpeedBase*GameRules.instance.speedCardBuffMult;
+        }
+        else if(CardManager.instance.leftHand.Any(x=>x.idName=="medkit")){
+            runSpeedCurrent=0.5f;
+        }
+        else{runSpeedCurrent=runSpeedBase;}
     }
     void FixedUpdate() {
         if(horizontal != 0 && vertical != 0){ // Check for diagonal movement
             // limit movement speed diagonally, so you move at 70% speed
-            horizontal *= moveLimiter;
-            vertical *= moveLimiter;
+            horizontal *= diagonalSpeed;
+            vertical *= diagonalSpeed;
         } 
-        rb.velocity = new Vector2(horizontal * runSpeed, vertical * runSpeed);
+        rb.velocity = new Vector2(horizontal * runSpeedCurrent, vertical * runSpeedCurrent);
     }
     void MovementDetectAndCameraFollow(){
         horizontal = Input.GetAxisRaw("Horizontal"); // -1 is left
